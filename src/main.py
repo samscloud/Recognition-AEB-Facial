@@ -1,3 +1,4 @@
+import logging
 from typing import Dict
 
 from fastapi import FastAPI, APIRouter, Depends
@@ -15,9 +16,9 @@ router = APIRouter()
 
 @app.on_event("startup")
 async def startup():
-    print("start")
+    logging.info("start")
     try:
-        print("read monitors data")
+        logging.info("read monitors data")
         init_service = FaceRecognitionInit(
             organization_slug=settings.ORGANIZATION_SLUG,
             be_api_key=settings.BACKEND_API_KEY,
@@ -26,13 +27,12 @@ async def startup():
 
         active_monitors = await init_service.execute()
 
-        print(active_monitors)
-        print("start camera")
+        logging.info("start camera")
         processor.set_monitors(active_monitors)
         processor.set_shinobi_client(init_service.shinobi_client)
         processor.start()
     except Exception as e:
-        print(f"Server start failed: {e}")
+        logging.info(f"Server start failed: {e}")
 
 
 @app.on_event("shutdown")

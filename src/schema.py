@@ -27,6 +27,7 @@ class CCTVCamera(BaseModel):
     users: Dict
 
     live_tracking: Dict
+    face_tracking: Dict
 
 
 class ManageUserTrackingStatusSchema(BaseModel):
@@ -41,6 +42,7 @@ class RegisteredUserCache(BaseModel):
     image_url: str
     appeared_at: datetime
     disappeared_at: datetime = None
+    is_saved: bool = False
 
 
 class UserLiveTrackingRecordSchema(BaseModel):

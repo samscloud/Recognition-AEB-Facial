@@ -1,7 +1,7 @@
 import asyncio
 import io
+import logging
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import List, Dict
@@ -17,6 +17,9 @@ from aiohttp import ClientSession
 from src.config import settings
 from src.schema import CCTVCamera, RegisteredUserCache, MonitorStateEnum
 from src.utils.shinobi import Shinobi
+
+
+logger = logging.getLogger(__name__)
 
 
 class NotRegisteredMonitorsException(Exception):
@@ -40,6 +43,7 @@ class FaceRecognitionProcessor:
         self.live_tracking_cache = {}
 
         self.shinobi = None
+        self.stop_event = threading.Event()
 
     def set_monitors(self, monitors: List[CCTVCamera]):
         self.monitors = monitors
@@ -70,20 +74,7 @@ class FaceRecognitionProcessor:
 
     def upload_face_to_s3(self, face_image, key):
         # Schedule the async upload function to run in the asyncio loop
-        asyncio.run_coroutine_threadsafe(self.upload_face_to_s3_async(face_image, key), self.loop)
-
-    def check_user_cache(self, user_id, monitor_id):
-        with self.lock:
-            if self.faces_cache.get(user_id):
-                print(f"user {user_id} in cache")
-                payload = self.faces_cache.get(user_id)
-                if payload.monitor_id == monitor_id:
-                    return None
-                else:
-                    print(f"send notification that user located on another camera")
-                    del self.faces_cache[user_id]
-                    return True
-            return True
+        return asyncio.run_coroutine_threadsafe(self.upload_face_to_s3_async(face_image, key), self.loop)
 
     async def send_history_record_async(self, payload: Dict):
         url = f"{settings.BACKEND_API_URL}/{self.organization_slug}/cctv-info"
@@ -97,55 +88,27 @@ class FaceRecognitionProcessor:
 
     def send_history_record(self, payload: Dict):
         url = f"{settings.BACKEND_API_URL}/{self.organization_slug}/cctv-info"
-        print(payload)
-        requests.post(url, data=payload)
+        response = requests.post(url, data=payload)
+        if response.status_code != 200:
+            print(f"cant send request: {response.content}")
         # asyncio.run_coroutine_threadsafe(self.send_history_record_async(payload), self.loop)
 
     def send_video_history_record(self, payload: Dict):
-        url = f"{settings.BACKEND_API_URL}/{self.organization_slug}/face-recognitions/history"
-        print(payload)
-        response = requests.post(url, data=payload)
-        print(f"response: {response.content}")
-
-    def update_cache(self, user_id, monitor_id):
-        payload = None
-        with self.lock:
-            if self.faces_cache.get(user_id):
-                payload = self.faces_cache.get(user_id)
-                print(payload)
-                if payload.monitor_id == monitor_id:
-                    del self.faces_cache[user_id]
-                    payload.disappeared_at = datetime.now()
-
-        if payload:
-            self.send_history_record(payload.dict())
-
-    def add_new_user_to_cache(self, user_id, monitor_id, location_id, distance, face_image):
-        image_filename = f"{user_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.jpg"
-
-        self.upload_face_to_s3(face_image, image_filename)
-        payload = RegisteredUserCache(
-            user=user_id,
-            camera=location_id,
-            monitor_id=monitor_id,
-            match_score=distance,
-            appeared_at=datetime.now(),
-            image_url=f"https://located-faces.s3.us-west-2.amazonaws.com/{image_filename}"
-        )
-        with self.lock:
-            self.faces_cache[user_id] = payload
-
-        self.send_history_record(payload.dict())
+        print("send video history record")
+        # url = f"{settings.BACKEND_API_URL}/{self.organization_slug}/face-recognitions/history"
+        # print(payload)
+        # response = requests.post(url, data=payload)
+        # print(f"response: {response.content}")
 
     def process_video_stream(self, monitor: CCTVCamera):
         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
-        process_every_nth_frame = 50
+        process_every_nth_frame = 25
 
-        while True:
+        while not self.stop_event.is_set():
             try:
                 ret, frame = video_capture.read()
                 if not ret:
-                    print(f"Failed to capture frame from {monitor.monitor_id}")
+                    logging.warning(f"Failed to capture frame from {monitor.monitor_id}")
                     video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
                     continue
 
@@ -161,89 +124,136 @@ class FaceRecognitionProcessor:
 
                             best_match_index = np.argmin(face_distances)
                             if matches[best_match_index]:
-                                print(f"Found: {user_id} with distance: {face_distances[best_match_index]}")
-
-                                cache_new_user = self.check_user_cache(user_id, monitor.monitor_id)
-                                print(cache_new_user)
+                                logging.info(f"Found: {user_id} with distance: {face_distances[best_match_index]}")
                                 face_matched.append(user_id)
-                                if cache_new_user:
-                                    top, right, bottom, left = face_location
-                                    face_image = frame[top:bottom, left:right]
-                                    pil_image = Image.fromarray(face_image)
-                                    img_byte_arr = io.BytesIO()
-                                    pil_image.save(img_byte_arr, format='JPEG')
-                                    img_byte_arr = img_byte_arr.getvalue()
-                                    self.add_new_user_to_cache(user_id, monitor.monitor_id, monitor.location_id, best_match_index, img_byte_arr)
 
-                    # Check users that gone from camera
-                    print(f"finded user: {face_matched}")
-                    print(f"finded user: {monitor.users.keys()}")
-                    for known_user_id in monitor.users.keys():
-                        if known_user_id not in face_matched:
-                            self.update_cache(known_user_id, monitor.monitor_id)
+                                if user_id in monitor.face_tracking.keys() and not monitor.face_tracking.get(user_id):
+                                    monitor.face_tracking[user_id] = RegisteredUserCache(
+                                        user=user_id,
+                                        camera=monitor.location_id,
+                                        monitor_id=monitor.monitor_id,
+                                        match_score=best_match_index,
+                                        appeared_at=datetime.now(),
+                                        image_url=self.save_user_face_to_s3(user_id, frame, face_location)
+                                    )
 
-                    reconnect_stream = self.manage_live_tracking(face_matched, monitor.users.keys(), monitor)
+                    self.check_face_detection_cache(monitor, face_matched)
+                    reconnect_stream = self.check_live_tracking_cache(monitor, face_matched)
                     if reconnect_stream:
+                        logging.warning(f"reconnection to {monitor.monitor_id}")
                         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
             except Exception as e:
                 print(e)
         # video_capture.release()
 
-    def manage_live_tracking(self, find_users, known_users, monitor):
+    def save_user_face_to_s3(self, user_id, frame, face_location) -> str:
+        top, right, bottom, left = face_location
+        face_image = frame[top:bottom, left:right]
+        pil_image = Image.fromarray(face_image)
+        img_byte_arr = io.BytesIO()
+        pil_image.save(img_byte_arr, format='JPEG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+        image_filename = f"{user_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.jpg"
+
+        self.upload_face_to_s3(img_byte_arr, image_filename)
+        return f"https://located-faces.s3.us-west-2.amazonaws.com/{image_filename}"
+
+    def check_face_detection_cache(self, monitor: CCTVCamera, face_matched: List[int]):
+        """
+        Check face detection cache.
+        If user in cache but not saved in db then create new history record.
+        If user disappeared from monitor then wait 30 second before trying to update history record.
+        This 30 seconds delay is needed for handle situation when user disappeared and then appeared again.
+
+        :param monitor: CCTVCamera minotor record
+        :param face_matched: matched face ndarray
+        """
+        missing_users = set(monitor.users.keys()) - set(face_matched)
+
+        # Manage find not processed users
+        for user_id in face_matched:
+            payload = monitor.face_tracking[user_id]
+            if not payload.is_saved:
+                # Save new record
+                self.send_history_record(payload.dict())
+                payload.is_saved = True
+            # is user is already registered and appear again then reset time
+            if payload.disappeared_at:
+                payload.disappeared_at = None
+            monitor.face_tracking[user_id] = payload
+
+        # Manage missing users
+        for user_id in missing_users:
+            payload = monitor.face_tracking.get(user_id)
+            if payload and not payload.disappeared_at:
+                # Register missing datetime
+                monitor.face_tracking[user_id].disappeared_at = datetime.now()
+            elif payload and payload.disappeared_at + timedelta(seconds=30) < datetime.now():
+                # send update history
+                payload.disappeared_at = datetime.now()
+                self.send_history_record(payload.dict())
+                # and reset history cache
+                monitor.face_tracking[user_id] = {}
+
+    def check_live_tracking_cache(self, monitor: CCTVCamera, matched_users: List[int]):
         if not monitor.live_tracking:
-            print("no active tracking users")
+            logging.info("no active tracking users")
             return False
 
         reconnect_stream = False
 
-        print(f"total find users: {len(find_users)}")
-        print(f"total known users: {len(known_users)}")
-        print(f"monitor_id: {monitor.monitor_id}")
-        print(f"monitor state: {monitor.state}")
+        logging.info(f"find users: {matched_users}")
+        missing_users = set(monitor.users.keys()) - set(matched_users)
+        logging.info(f"missing users: {missing_users}")
 
-        print("processing find users")
-        for user_id in find_users:
-            if user_id in monitor.live_tracking.keys():
-                print("user required tracking!!!!!")
-                print(f"monitor recording status: {monitor.state}")
-                if monitor.state != MonitorStateEnum.record:
-                    self.shinobi.start_monitor_recording_sync(monitor.monitor_id)
-                    monitor.state = MonitorStateEnum.record
-                    reconnect_stream = True
+        # First check if matched users is tracking
+        for user_id in matched_users:
+            if user_id not in monitor.live_tracking.keys():
+                # User not required tracking
+                continue
 
-                print("check if not tracking this user")
-                tracking_status = monitor.live_tracking.get(user_id)
-                if tracking_status:
-                    print(tracking_status)
-                    if not tracking_status["start"]:
-                        tracking_status["start"] = datetime.now()
-                        print("send BE request")
+            # User required tracking
+            payload = monitor.live_tracking[user_id]
+            if not payload:
+                monitor.live_tracking[user_id] = {
+                    "appeared_at": datetime.now()
+                }
 
-        print("missing users")
-        missing_users = set(known_users) - set(find_users)
-        print(f"missing users: {len(missing_users)}")
-        for missing_user_id in missing_users:
-            if missing_user_id in monitor.live_tracking.keys():
-                print("user stop tracking!!!!!")
-                tracking_payload = monitor.live_tracking[missing_user_id]
-                print(f"missing user tracking payload: {tracking_payload}")
-                if tracking_payload.get("start"):
-                    tracking_payload["end"] = datetime.now()
-                    self.send_video_history_record(
-                        payload={
-                            "user_id": missing_user_id,
-                            "camera_id": monitor.location_id,
-                            "appeared_at": tracking_payload["start"],
-                            "disappeared_at": tracking_payload["end"],
-                        }
-                    )
-                monitor.live_tracking[missing_user_id] = {"start": None, "end": None}
+            if payload.get("disappeared_at"):
+                # If user back to camera then reset disappeared_at timestamp
+                payload["disappeared_at"] = None
 
-        print("check if we steel need to record monitor")
-        if len(missing_users) == len(known_users) and monitor.state == MonitorStateEnum.record:
-            print("stop recording!")
-            self.shinobi.stop_monitor_recording_sync(monitor.monitor_id)
+        # Check missing users
+        for user_id in missing_users:
+            missing_user_payload = monitor.live_tracking.get(user_id)
+            if not missing_user_payload:
+                continue
+
+            disappeared_at = missing_user_payload.get("disappeared_at")
+            if disappeared_at and disappeared_at + timedelta(seconds=30) < datetime.now():
+                missing_user_payload["disappeared_at"] = datetime.now()
+                missing_user_payload["user_id"] = user_id
+                missing_user_payload["camera_id"] = monitor.location_id
+                self.send_video_history_record(missing_user_payload)
+                monitor.live_tracking[user_id] = {}
+            elif not disappeared_at:
+                missing_user_payload["disappeared_at"] = datetime.now()
+            logging.info(f"missing user payload: {missing_user_payload}")
+
+        user_under_tracking = [user_id for user_id, payload in monitor.live_tracking.items() if payload]
+        logging.info(f"user under tracking: {user_under_tracking}")
+
+        # Do we need enable recording?
+        if monitor.state == MonitorStateEnum.start and user_under_tracking:
+            logging.info(f"enable monitor recording {monitor.monitor_id}")
+            self.shinobi.start_monitor_recording_sync(monitor.monitor_id)
+            monitor.state = MonitorStateEnum.record
+            reconnect_stream = True
+        elif monitor.state == MonitorStateEnum.record and not user_under_tracking:
+            logging.info(f"no user under tracking {monitor.monitor_id}. stop record")
             monitor.state = MonitorStateEnum.start
+            self.shinobi.stop_monitor_recording_sync(monitor.monitor_id)
             reconnect_stream = True
 
         return reconnect_stream
@@ -261,7 +271,7 @@ class FaceRecognitionProcessor:
                         del monitor.live_tracking[user_id]
                 else:
                     if tracking_status:
-                        monitor.live_tracking = {user_id: {"start": None, "end": None}}
+                        monitor.live_tracking = {user_id: {}}
 
     def start(self):
         threading.Thread(target=self.start_async_loop, daemon=True).start()
@@ -270,5 +280,10 @@ class FaceRecognitionProcessor:
             self.executor.submit(self.process_video_stream, monitor)
 
     def stop(self):
-        # Properly stop your threads and the asyncio loop
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        # Ensure proper cleanup
+        if self.executor:
+            self.stop_event.set()
+            self.executor.shutdown(wait=True)
+            logging.info("processor id down")
+        if self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)

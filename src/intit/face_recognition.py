@@ -84,8 +84,6 @@ class FaceRecognitionInit:
         if organization_info.get("users"):
             faces = self.read_user_datasets([item.get("id") for item in organization_info["users"]])
 
-        print(f"faces: {faces}")
-
         # Stream urls from shinobi
         self.shinobi_client = Shinobi(organization_info["shinobi_authkey"], organization_info["shinobi_group_key"])
         await self.get_monitors_info(organization_info.get("cctv"))
@@ -106,6 +104,9 @@ class FaceRecognitionInit:
 
                 users=faces,
                 live_tracking={},
+                face_tracking={
+                    user_id: {} for user_id in faces.keys()
+                }
             )
             for monitor in organization_info["cctv"]
         ]

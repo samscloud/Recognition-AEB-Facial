@@ -1,3 +1,4 @@
+import logging.config
 import os
 from typing import Any
 
@@ -36,6 +37,36 @@ class Config(BaseSettings):
         extra = None
 
 
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+        },
+    },
+    "loggers": {
+        "": {  # root logger
+            "handlers": ["console"],
+            "level": "INFO",
+        },
+        "uvicorn.access": {
+            "level": "INFO",
+            "handlers": ["console"],
+            "propagate": False,
+        },
+    },
+}
+
+
 settings = Config()
+logging.config.dictConfig(LOGGING_CONFIG)
 api_key_header = APIKeyHeader(name=settings.API_KEY_NAME, auto_error=False)
 app_configs: dict[str, Any] = {"title": "App API"}
