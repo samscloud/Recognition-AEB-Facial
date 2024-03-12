@@ -1,9 +1,13 @@
+import logging
 from typing import Optional, Dict
 
 import requests
 from aiohttp import ClientSession
 
 from src.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class Shinobi:
@@ -37,7 +41,8 @@ class Shinobi:
                 if response.status == 200:
                     response_body = await response.json()
                     return response_body
-
+                else:
+                    logger.error(f"cant send request to shinobi: {response.content}")
                 return None
 
     def start_monitor_recording_sync(self, monitor_id: str) -> bool:
