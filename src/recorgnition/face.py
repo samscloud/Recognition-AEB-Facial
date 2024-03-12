@@ -91,7 +91,6 @@ class FaceRecognitionProcessor:
         response = requests.post(url, data=payload)
         if response.status_code != 200:
             print(f"cant send request: {response.content}")
-        # asyncio.run_coroutine_threadsafe(self.send_history_record_async(payload), self.loop)
 
     def send_video_history_record(self, payload: Dict):
         url = f"{settings.BACKEND_API_URL}/{self.organization_slug}/face-recognitions/history"
