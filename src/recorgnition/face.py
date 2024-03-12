@@ -107,45 +107,45 @@ class FaceRecognitionProcessor:
         process_every_nth_frame = 25
 
         while not self.stop_event.is_set():
-            try:
-                ret, frame = video_capture.read()
-                if not ret:
-                    logging.warning(f"Failed to capture frame from {monitor.monitor_id}")
+            # try:
+            ret, frame = video_capture.read()
+            if not ret:
+                logging.warning(f"Failed to capture frame from {monitor.monitor_id}")
+                video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
+                continue
+
+            if video_capture.get(cv2.CAP_PROP_POS_FRAMES) % process_every_nth_frame == 0:
+                face_locations = face_recognition.face_locations(frame)
+                face_encodings = face_recognition.face_encodings(frame, face_locations)
+
+                face_matched = []
+                for face_encoding, face_location in zip(face_encodings, face_locations):
+                    for user_id, dataset in monitor.users.items():
+                        matches = face_recognition.compare_faces(dataset, face_encoding)
+                        face_distances = face_recognition.face_distance(dataset, face_encoding)
+
+                        best_match_index = np.argmin(face_distances)
+                        if matches[best_match_index]:
+                            logging.info(f"Found: {user_id} with distance: {face_distances[best_match_index]}")
+                            face_matched.append(user_id)
+
+                            if user_id in monitor.face_tracking.keys() and not monitor.face_tracking.get(user_id):
+                                monitor.face_tracking[user_id] = RegisteredUserCache(
+                                    user=user_id,
+                                    camera=monitor.location_id,
+                                    monitor_id=monitor.monitor_id,
+                                    match_score=best_match_index,
+                                    appeared_at=datetime.now(),
+                                    image_url=self.save_user_face_to_s3(user_id, frame, face_location)
+                                )
+
+                self.check_face_detection_cache(monitor, face_matched)
+                reconnect_stream = self.check_live_tracking_cache(monitor, face_matched)
+                if reconnect_stream:
+                    logging.warning(f"reconnection to {monitor.monitor_id}")
                     video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
-                    continue
-
-                if video_capture.get(cv2.CAP_PROP_POS_FRAMES) % process_every_nth_frame == 0:
-                    face_locations = face_recognition.face_locations(frame)
-                    face_encodings = face_recognition.face_encodings(frame, face_locations)
-
-                    face_matched = []
-                    for face_encoding, face_location in zip(face_encodings, face_locations):
-                        for user_id, dataset in monitor.users.items():
-                            matches = face_recognition.compare_faces(dataset, face_encoding)
-                            face_distances = face_recognition.face_distance(dataset, face_encoding)
-
-                            best_match_index = np.argmin(face_distances)
-                            if matches[best_match_index]:
-                                logging.info(f"Found: {user_id} with distance: {face_distances[best_match_index]}")
-                                face_matched.append(user_id)
-
-                                if user_id in monitor.face_tracking.keys() and not monitor.face_tracking.get(user_id):
-                                    monitor.face_tracking[user_id] = RegisteredUserCache(
-                                        user=user_id,
-                                        camera=monitor.location_id,
-                                        monitor_id=monitor.monitor_id,
-                                        match_score=best_match_index,
-                                        appeared_at=datetime.now(),
-                                        image_url=self.save_user_face_to_s3(user_id, frame, face_location)
-                                    )
-
-                    self.check_face_detection_cache(monitor, face_matched)
-                    reconnect_stream = self.check_live_tracking_cache(monitor, face_matched)
-                    if reconnect_stream:
-                        logging.warning(f"reconnection to {monitor.monitor_id}")
-                        video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
-            except Exception as e:
-                print(e)
+            # except Exception as e:
+            #    logger.warning(e)
         # video_capture.release()
 
     def save_user_face_to_s3(self, user_id, frame, face_location) -> str:
