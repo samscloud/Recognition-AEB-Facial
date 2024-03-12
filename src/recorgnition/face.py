@@ -100,6 +100,8 @@ class FaceRecognitionProcessor:
 
     def process_video_stream(self, monitor: CCTVCamera):
         logger.info(f"Try to read stream: {monitor.monitor_stream_url}")
+        if not monitor.monitor_stream_url:
+            return
         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
         process_every_nth_frame = 25
 
