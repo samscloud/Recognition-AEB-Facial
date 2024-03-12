@@ -114,7 +114,7 @@ class FaceRecognitionInit:
 
                 users=faces,
                 live_tracking={
-                    user_id: {"start": None, "end": None}
+                    user_id: {}
                     for user_id in organization_info.get("live_tracking")
                 },
                 face_tracking={
