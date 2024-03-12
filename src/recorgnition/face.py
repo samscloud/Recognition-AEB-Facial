@@ -103,6 +103,7 @@ class FaceRecognitionProcessor:
         if not monitor.monitor_stream_url:
             return
         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
+        logger.info("Reading video")
         process_every_nth_frame = 25
 
         while not self.stop_event.is_set():
@@ -238,7 +239,7 @@ class FaceRecognitionProcessor:
                 missing_user_payload["camera_id"] = monitor.location_id
                 self.send_video_history_record(missing_user_payload)
                 monitor.live_tracking[user_id] = {}
-            elif not disappeared_at:
+            elif not disappeared_at and "appeared_at" in missing_user_payload.keys():
                 missing_user_payload["disappeared_at"] = datetime.now()
             logging.info(f"missing user payload: {missing_user_payload}")
 

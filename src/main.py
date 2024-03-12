@@ -63,7 +63,7 @@ async def get_available_users(user_id: int, payload: ManageUserTrackingStatusSch
 
 
 @router.post("/{user_id}")
-async def get_available_users(user_id: int, background_tasks: BackgroundTasks, _=Depends(get_api_key)) -> Dict:
+def get_available_users(user_id: int, background_tasks: BackgroundTasks, _=Depends(get_api_key)) -> Dict:
     # background_tasks.add_task(add_new_user, user_id)
     dataset = init_service.read_user_datasets([user_id])
     if dataset:
