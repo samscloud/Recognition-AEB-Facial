@@ -99,6 +99,7 @@ class FaceRecognitionProcessor:
             logging.error(f"cant send video detection request: {response.content}")
 
     def process_video_stream(self, monitor: CCTVCamera):
+        logger.info(f"Try to read stream: {monitor.monitor_stream_url}")
         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
         process_every_nth_frame = 25
 
@@ -270,6 +271,22 @@ class FaceRecognitionProcessor:
                 else:
                     if tracking_status:
                         monitor.live_tracking = {user_id: {}}
+
+    def add_new_user(self, user_id, dataset: Dict):
+        if not self.monitors:
+            return
+
+        logging.info("add new user")
+        for monitor in self.monitors:
+            if monitor.users:
+                monitor.users = monitor.users | dataset
+            else:
+                monitor.users = dataset
+
+            if monitor.face_tracking:
+                monitor.face_tracking[user_id] = {}
+            else:
+                monitor.face_tracking = {user_id: {}}
 
     def start(self):
         threading.Thread(target=self.start_async_loop, daemon=True).start()

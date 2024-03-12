@@ -1,7 +1,7 @@
 import logging
 from typing import Dict
 
-from fastapi import FastAPI, APIRouter, Depends
+from fastapi import FastAPI, APIRouter, Depends, BackgroundTasks
 
 from src.dependencies import get_api_key
 from src.intit.face_recognition import FaceRecognitionInit
@@ -11,7 +11,18 @@ from src.schema import ManageUserTrackingStatusSchema
 
 app = FastAPI(**app_configs)
 processor = FaceRecognitionProcessor()
+init_service = FaceRecognitionInit(
+            organization_slug=settings.ORGANIZATION_SLUG,
+            be_api_key=settings.BACKEND_API_KEY,
+            be_url=settings.BACKEND_API_URL,
+        )
 router = APIRouter()
+
+
+async def add_new_user(user_id: int):
+    dataset = init_service.read_user_datasets([user_id])
+    if dataset:
+        processor.add_new_user(user_id, dataset)
 
 
 @app.on_event("startup")
@@ -19,12 +30,6 @@ async def startup():
     logging.info("start")
     try:
         logging.info("read monitors data")
-        init_service = FaceRecognitionInit(
-            organization_slug=settings.ORGANIZATION_SLUG,
-            be_api_key=settings.BACKEND_API_KEY,
-            be_url=settings.BACKEND_API_URL,
-        )
-
         active_monitors = await init_service.execute()
 
         logging.info("start camera")
@@ -53,9 +58,16 @@ async def get_available_users(_=Depends(get_api_key)) -> Dict:
 
 @router.post("/{user_id}/track")
 async def get_available_users(user_id: int, payload: ManageUserTrackingStatusSchema, _=Depends(get_api_key)) -> Dict:
-    print(user_id)
-    print(payload)
     processor.change_user_tracking_status(user_id, payload.status)
+    return {"status": "OK"}
+
+
+@router.post("/{user_id}")
+async def get_available_users(user_id: int, background_tasks: BackgroundTasks, _=Depends(get_api_key)) -> Dict:
+    # background_tasks.add_task(add_new_user, user_id)
+    dataset = init_service.read_user_datasets([user_id])
+    if dataset:
+        processor.add_new_user(user_id, dataset)
     return {"status": "OK"}
 
 
