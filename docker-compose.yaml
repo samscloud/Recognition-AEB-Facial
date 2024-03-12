@@ -9,3 +9,6 @@ services:
     ports:
       - "9000:9000"
     restart: always
+    network_mode: bridge
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
