@@ -1,5 +1,6 @@
 import base64
 import io
+import logging
 from typing import Optional, Dict, List
 
 import aioboto3
@@ -12,6 +13,9 @@ from PIL import Image
 from src.config import settings
 from src.schema import CCTVCamera
 from src.utils.shinobi import Shinobi
+
+
+logger = logging.getLogger(__name__)
 
 
 class FaceRecognitionInit:
@@ -35,6 +39,8 @@ class FaceRecognitionInit:
             async with session.get(url) as response:
                 if response.status == 200:
                     return await response.json()
+                else:
+                    logging.error(f"Error fetching: {await response.json()}")
 
     def read_user_datasets(self, users_id: List[int]) -> Dict:
         s3 = boto3.client(
@@ -74,21 +80,25 @@ class FaceRecognitionInit:
             monitor["stram_url"] = await self.shinobi_client.get_monitor_stream_url(monitor.get("monitor_id"))
 
     async def execute(self) -> List[CCTVCamera]:
+        logging.info("Fetch organization settings")
         organization_info = await self.fetch_organization_info()
         if not organization_info:
             raise Exception("Organization not found")
 
-        print(f"organization: {organization_info}")
+        logging.info(f"organization settings: {organization_info}")
 
+        logging.info(f"Start fetching users face dataset")
         faces = {}
         if organization_info.get("users"):
-            faces = self.read_user_datasets([item.get("id") for item in organization_info["users"]])
+            faces = self.read_user_datasets([item for item in organization_info["users"]])
+        logging.info(f"Dataset fetched: {len(faces)}")
 
         # Stream urls from shinobi
+        logging.info("Fetch active monitors stram url")
         self.shinobi_client = Shinobi(organization_info["shinobi_authkey"], organization_info["shinobi_group_key"])
         await self.get_monitors_info(organization_info.get("cctv"))
 
-        print(f'monitor info: {organization_info.get("cctv")}')
+        logging.info(f'monitors streams urls fetched: {organization_info.get("cctv")}')
 
         # Build response
         return [
@@ -103,7 +113,10 @@ class FaceRecognitionInit:
                 shinobi_group_key=organization_info.get("shinobi_group_key"),
 
                 users=faces,
-                live_tracking={},
+                live_tracking={
+                    user_id: {"start": None, "end": None}
+                    for user_id in organization_info.get("live_tracking")
+                },
                 face_tracking={
                     user_id: {} for user_id in faces.keys()
                 }
