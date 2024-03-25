@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install dlib
 WORKDIR /app
 
-COPY . /app
+COPY ../../. /app
 RUN pip install -U pip wheel cmake
 RUN pip install -r requirements.txt --no-cache-dir
 

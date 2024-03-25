@@ -103,7 +103,7 @@ class FaceRecognitionProcessor:
         if not monitor.monitor_stream_url:
             return
         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
-        logger.info("Reading video")
+        logger.info(f"{monitor.monitor_id}: Reading video")
         process_every_nth_frame = 25
 
         while not self.stop_event.is_set():
@@ -111,6 +111,7 @@ class FaceRecognitionProcessor:
                 ret, frame = video_capture.read()
                 if not ret:
                     logging.warning(f"Failed to capture frame from {monitor.monitor_id}")
+                    video_capture.release()
                     video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
                     continue
 
@@ -126,7 +127,7 @@ class FaceRecognitionProcessor:
 
                             best_match_index = np.argmin(face_distances)
                             if matches[best_match_index]:
-                                logging.info(f"Found: {user_id} with distance: {face_distances[best_match_index]}")
+                                logging.info(f"{monitor.monitor_id} Found: {user_id} with distance: {face_distances[best_match_index]}")
                                 face_matched.append(user_id)
 
                                 if user_id in monitor.face_tracking.keys() and not monitor.face_tracking.get(user_id):
@@ -142,7 +143,7 @@ class FaceRecognitionProcessor:
                     self.check_face_detection_cache(monitor, face_matched)
                     reconnect_stream = self.check_live_tracking_cache(monitor, face_matched)
                     if reconnect_stream:
-                        logging.warning(f"reconnection to {monitor.monitor_id}")
+                        logging.warning(f"{monitor.monitor_id} reconnection to {monitor.monitor_id}")
                         video_capture = cv2.VideoCapture(monitor.monitor_stream_url)
             except Exception as e:
                logger.warning(e)
@@ -171,125 +172,132 @@ class FaceRecognitionProcessor:
         :param monitor: CCTVCamera minotor record
         :param face_matched: matched face ndarray
         """
-        missing_users = set(monitor.users.keys()) - set(face_matched)
 
-        # Manage find not processed users
-        for user_id in face_matched:
-            payload = monitor.face_tracking[user_id]
-            if not payload.is_saved:
-                # Save new record
-                self.send_history_record(payload.dict())
-                payload.is_saved = True
-            # is user is already registered and appear again then reset time
-            if payload.disappeared_at:
-                payload.disappeared_at = None
-            monitor.face_tracking[user_id] = payload
+        with self.lock:
+            missing_users = set(monitor.users.keys()) - set(face_matched)
 
-        # Manage missing users
-        for user_id in missing_users:
-            payload = monitor.face_tracking.get(user_id)
-            if payload and not payload.disappeared_at:
-                # Register missing datetime
-                monitor.face_tracking[user_id].disappeared_at = datetime.now()
-            elif payload and payload.disappeared_at + timedelta(seconds=30) < datetime.now():
-                # send update history
-                payload.disappeared_at = datetime.now()
-                self.send_history_record(payload.dict())
-                # and reset history cache
-                monitor.face_tracking[user_id] = {}
+            # Manage find not processed users
+            for user_id in face_matched:
+                payload = monitor.face_tracking[user_id]
+                if not payload.is_saved:
+                    # Save new record
+                    self.send_history_record(payload.dict())
+                    payload.is_saved = True
+                # is user is already registered and appear again then reset time
+                if payload.disappeared_at:
+                    payload.disappeared_at = None
+                monitor.face_tracking[user_id] = payload
+
+            # Manage missing users
+            for user_id in missing_users:
+                payload = monitor.face_tracking.get(user_id)
+                if payload and not payload.disappeared_at:
+                    # Register missing datetime
+                    monitor.face_tracking[user_id].disappeared_at = datetime.now()
+                elif payload and payload.disappeared_at + timedelta(seconds=30) < datetime.now():
+                    # send update history
+                    payload.disappeared_at = datetime.now()
+                    self.send_history_record(payload.dict())
+                    # and reset history cache
+                    monitor.face_tracking[user_id] = {}
 
     def check_live_tracking_cache(self, monitor: CCTVCamera, matched_users: List[int]):
-        if not monitor.live_tracking:
-            logging.info("no active tracking users")
-            return False
+        with self.lock:
+            if not monitor.live_tracking:
+                logging.info("no active tracking users")
+                return False
 
-        reconnect_stream = False
+            reconnect_stream = False
 
-        logging.info(f"find users: {matched_users}")
-        missing_users = set(monitor.users.keys()) - set(matched_users)
-        logging.info(f"missing users: {missing_users}")
+            logging.info(f"{monitor.monitor_id} find users: {matched_users}")
+            missing_users = set(monitor.users.keys()) - set(matched_users)
+            logging.info(f"{monitor.monitor_id} missing users: {missing_users}")
 
-        # First check if matched users is tracking
-        for user_id in matched_users:
-            if user_id not in monitor.live_tracking.keys():
-                # User not required tracking
-                continue
+            # First check if matched users is tracking
+            for user_id in matched_users:
+                if user_id not in monitor.live_tracking.keys():
+                    # User not required tracking
+                    continue
 
-            # User required tracking
-            payload = monitor.live_tracking[user_id]
-            if not payload:
-                monitor.live_tracking[user_id] = {
-                    "appeared_at": datetime.now()
-                }
+                # User required tracking
+                payload = monitor.live_tracking[user_id]
+                if not payload:
+                    monitor.live_tracking[user_id] = {
+                        "appeared_at": datetime.now()
+                    }
 
-            if payload.get("disappeared_at"):
-                # If user back to camera then reset disappeared_at timestamp
-                payload["disappeared_at"] = None
+                if payload.get("disappeared_at"):
+                    # If user back to camera then reset disappeared_at timestamp
+                    payload["disappeared_at"] = None
 
-        # Check missing users
-        for user_id in missing_users:
-            missing_user_payload = monitor.live_tracking.get(user_id)
-            if not missing_user_payload:
-                continue
+            # Check missing users
+            for user_id in missing_users:
+                missing_user_payload = monitor.live_tracking.get(user_id)
+                if not missing_user_payload:
+                    continue
 
-            disappeared_at = missing_user_payload.get("disappeared_at")
-            if disappeared_at and disappeared_at + timedelta(seconds=30) < datetime.now():
-                missing_user_payload["disappeared_at"] = datetime.now()
-                missing_user_payload["user_id"] = user_id
-                missing_user_payload["camera_id"] = monitor.location_id
-                self.send_video_history_record(missing_user_payload)
-                monitor.live_tracking[user_id] = {}
-            elif not disappeared_at and "appeared_at" in missing_user_payload.keys():
-                missing_user_payload["disappeared_at"] = datetime.now()
-            logging.info(f"missing user payload: {missing_user_payload}")
+                disappeared_at = missing_user_payload.get("disappeared_at")
+                if disappeared_at and disappeared_at + timedelta(seconds=30) < datetime.now():
+                    missing_user_payload["disappeared_at"] = datetime.now()
+                    missing_user_payload["user_id"] = user_id
+                    missing_user_payload["camera_id"] = monitor.location_id
+                    self.send_video_history_record(missing_user_payload)
+                    monitor.live_tracking[user_id] = {}
+                elif not disappeared_at and "appeared_at" in missing_user_payload.keys():
+                    missing_user_payload["disappeared_at"] = datetime.now()
+                logging.info(f"{monitor.monitor_id} missing user payload: {missing_user_payload}")
 
-        user_under_tracking = [user_id for user_id, payload in monitor.live_tracking.items() if payload]
-        logging.info(f"user under tracking: {user_under_tracking}")
+            user_under_tracking = [user_id for user_id, payload in monitor.live_tracking.items() if payload]
+            logging.info(f"{monitor.monitor_id} user under tracking: {user_under_tracking}")
 
-        # Do we need enable recording?
+            # Do we need enable recording?
         if monitor.state == MonitorStateEnum.start and user_under_tracking:
-            logging.info(f"enable monitor recording {monitor.monitor_id}")
+            logging.info(f"{monitor.monitor_id} enable monitor recording {monitor.monitor_id}")
             self.shinobi.start_monitor_recording_sync(monitor.monitor_id)
-            monitor.state = MonitorStateEnum.record
+            with self.lock:
+                monitor.state = MonitorStateEnum.record
             reconnect_stream = True
         elif monitor.state == MonitorStateEnum.record and not user_under_tracking:
-            logging.info(f"no user under tracking {monitor.monitor_id}. stop record")
-            monitor.state = MonitorStateEnum.start
+            logging.info(f"{monitor.monitor_id} no user under tracking {monitor.monitor_id}. stop record")
+            with self.lock:
+                monitor.state = MonitorStateEnum.start
             self.shinobi.stop_monitor_recording_sync(monitor.monitor_id)
             reconnect_stream = True
 
         return reconnect_stream
 
     def change_user_tracking_status(self, user_id: int, tracking_status: bool):
-        if not self.monitors:
-            raise NotRegisteredMonitorsException
+        with self.lock:
+            if not self.monitors:
+                raise NotRegisteredMonitorsException
 
-        for monitor in self.monitors:
-            if monitor.users.get(user_id):
-                if monitor.live_tracking:
-                    if tracking_status:
-                        monitor.live_tracking[user_id] = {}
+            for monitor in self.monitors:
+                if monitor.users.get(user_id):
+                    if monitor.live_tracking:
+                        if tracking_status:
+                            monitor.live_tracking[user_id] = {}
+                        else:
+                            del monitor.live_tracking[user_id]
                     else:
-                        del monitor.live_tracking[user_id]
-                else:
-                    if tracking_status:
-                        monitor.live_tracking = {user_id: {}}
+                        if tracking_status:
+                            monitor.live_tracking = {user_id: {}}
 
     def add_new_user(self, user_id, dataset: Dict):
         if not self.monitors:
             return
 
-        logging.info("add new user")
-        for monitor in self.monitors:
-            if monitor.users:
-                monitor.users = monitor.users | dataset
-            else:
-                monitor.users = dataset
+        with self.lock:
+            logging.info("add new user")
+            for monitor in self.monitors:
+                if monitor.users:
+                    monitor.users = monitor.users | dataset
+                else:
+                    monitor.users = dataset
 
-            if monitor.face_tracking:
-                monitor.face_tracking[user_id] = {}
-            else:
-                monitor.face_tracking = {user_id: {}}
+                if monitor.face_tracking:
+                    monitor.face_tracking[user_id] = {}
+                else:
+                    monitor.face_tracking = {user_id: {}}
 
     def start(self):
         threading.Thread(target=self.start_async_loop, daemon=True).start()
