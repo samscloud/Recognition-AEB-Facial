@@ -1,4 +1,4 @@
-version: '3.7'
+version: '3'
 
 services:
   face-detection:
@@ -11,18 +11,17 @@ services:
     ports:
       - "9000:9000"
     restart: always
-    network_mode: bridge
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       - shinobi
+    networks:
+      - recognition
 
   shinobi:
     image: registry.gitlab.com/shinobi-systems/shinobi:dev
-    container_name: shinobi
+    container_name: Shinobi
     environment:
       - PLUGIN_KEYS=$PLUGIN_YMLS
-      - SSL_ENABLED='false'
+      - SSL_ENABLED=$SSL_TOGGLE
     volumes:
       - $HOME/Shinobi/config:/config
       - $HOME/Shinobi/customAutoLoad:/home/Shinobi/libs/customAutoLoad
@@ -31,5 +30,11 @@ services:
       - $HOME/Shinobi/plugins:/home/Shinobi/plugins
       - /dev/shm/Shinobi/streams:/dev/shm/streams
     ports:
-      - "8080:8080"
+      - 8080:8080
     restart: unless-stopped
+    networks:
+      - recognition
+
+networks:
+  recognition:
+    driver: bridge

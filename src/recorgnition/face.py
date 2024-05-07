@@ -13,6 +13,7 @@ import numpy as np
 import requests
 from PIL import Image
 from aiohttp import ClientSession
+from botocore.monitoring import Monitor
 
 from src.config import settings
 from src.schema import CCTVCamera, RegisteredUserCache, MonitorStateEnum
@@ -28,7 +29,7 @@ class NotRegisteredMonitorsException(Exception):
 
 class FaceRecognitionProcessor:
 
-    def __init__(self):
+    def __init__(self, shinobi: Shinobi):
         self.monitors = None
         self.s3_bucket_name = settings.AWS_STORAGE_BUCKET_NAME
         self.executor = None
@@ -42,12 +43,12 @@ class FaceRecognitionProcessor:
         self.faces_cache = {}
         self.live_tracking_cache = {}
 
-        self.shinobi = None
+        self.shinobi = shinobi
         self.stop_event = threading.Event()
 
     def set_monitors(self, monitors: List[CCTVCamera]):
         self.monitors = monitors
-        self.executor = ThreadPoolExecutor(max_workers=len(monitors))
+        self.executor = ThreadPoolExecutor()
         self.organization_slug = monitors[0].organization_slug
 
     def set_shinobi_client(self, shinobi: Shinobi):
@@ -106,7 +107,7 @@ class FaceRecognitionProcessor:
         logger.info(f"{monitor.monitor_id}: Reading video")
         process_every_nth_frame = 25
 
-        while not self.stop_event.is_set():
+        while not self.stop_event.is_set() or not monitor.is_deleted:
             try:
                 ret, frame = video_capture.read()
                 if not ret:
@@ -298,6 +299,15 @@ class FaceRecognitionProcessor:
                     monitor.face_tracking[user_id] = {}
                 else:
                     monitor.face_tracking = {user_id: {}}
+
+    def delete_monitor(self, monitor_id: str):
+        for monitor in self.monitors:
+            if monitor.monitor_id == monitor_id:
+                monitor.is_deleted = True
+
+    def register_monitor(self, monitor: CCTVCamera):
+        self.monitors.append(monitor)
+        self.executor.submit(self.process_video_stream, monitor)
 
     def start(self):
         threading.Thread(target=self.start_async_loop, daemon=True).start()

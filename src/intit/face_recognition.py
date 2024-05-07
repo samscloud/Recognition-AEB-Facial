@@ -25,12 +25,12 @@ class FaceRecognitionInit:
     - users with datasets
     """
 
-    def __init__(self, organization_slug: str, be_api_key: str, be_url: str):
+    def __init__(self, organization_slug: str, be_api_key: str, be_url: str, shinobi: Shinobi) -> None:
         self.organization_slug = organization_slug
         self.be_api_key = be_api_key
         self.be_url = be_url
 
-        self.shinobi_client = None
+        self.shinobi_client = shinobi
 
     async def fetch_organization_info(self) -> Optional[Dict]:
         url = f"{self.be_url}/{self.organization_slug}/cctv-info"
@@ -77,7 +77,8 @@ class FaceRecognitionInit:
 
     async def get_monitors_info(self, monitors: List[Dict]):
         for monitor in monitors:
-            monitor["stram_url"] = await self.shinobi_client.get_monitor_stream_url(monitor.get("monitor_id"))
+            if monitor["monitor_id"]:
+                monitor["stram_url"] = await self.shinobi_client.get_monitor_stream_url(monitor.get("monitor_id"))
 
     async def execute(self) -> List[CCTVCamera]:
         logging.info("Fetch organization settings")
@@ -94,8 +95,7 @@ class FaceRecognitionInit:
         logging.info(f"Dataset fetched: {len(faces)}")
 
         # Stream urls from shinobi
-        logging.info("Fetch active monitors stram url")
-        self.shinobi_client = Shinobi(organization_info["shinobi_authkey"], organization_info["shinobi_group_key"])
+        logging.info("Fetch active monitors stream url")
         await self.get_monitors_info(organization_info.get("cctv"))
 
         logging.info(f'monitors streams urls fetched: {organization_info.get("cctv")}')
@@ -109,8 +109,8 @@ class FaceRecognitionInit:
 
                 organization_id=organization_info.get("id"),
                 organization_slug=self.organization_slug,
-                shinobi_authkey=organization_info.get("shinobi_authkey"),
-                shinobi_group_key=organization_info.get("shinobi_group_key"),
+                shinobi_email=organization_info.get("shinobi_email"),
+                shinobi_password=organization_info.get("shinobi_password"),
 
                 users=faces,
                 live_tracking={
@@ -121,6 +121,6 @@ class FaceRecognitionInit:
                     user_id: {} for user_id in faces.keys()
                 }
             )
-            for monitor in organization_info["cctv"]
+            for monitor in organization_info["cctv"] if monitor["monitor_id"]
         ]
 

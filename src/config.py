@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings
 
 os.environ['SSL_CERT_FILE'] = certifi.where()
 
+
 class Config(BaseSettings):
     ORGANIZATION_ID: int = Field(..., env="ORGANIZATION_ID")
     ORGANIZATION_SLUG: str = Field(..., env="ORGANIZATION_SLUG")
@@ -24,6 +25,9 @@ class Config(BaseSettings):
     AWS_STORAGE_BUCKET_NAME: str = Field("user-faces-dataset", env="STORAGE_BUCKET_NAME")
 
     SHINOBI_URL: str = Field("https://127.0.0.1:8000", env="SHINOBI_URL")
+    SHINOBI_USER: str = Field(..., env="SHINOBI_USER")
+    SHINOBI_PASSWORD: str = Field(..., env="SHINOBI_PASSWORD")
+    SHINOBI_API_KEY: str = Field(..., env="SHINOBI_API_KEY")
 
     USER_NOTIFICATION_DELAY_SECONDS: int = Field(30, env="USER_NOTIFICATION_DELAY_SECONDS")
 

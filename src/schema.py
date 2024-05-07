@@ -20,14 +20,16 @@ class CCTVCamera(BaseModel):
     organization_id: int
     organization_slug: str
 
-    shinobi_authkey: str
-    shinobi_group_key: str
+    shinobi_email: str
+    shinobi_password: str
     state: MonitorStateEnum = MonitorStateEnum.start
 
     users: Dict
 
     live_tracking: Dict
     face_tracking: Dict
+
+    is_deleted: bool = False
 
 
 class ManageUserTrackingStatusSchema(BaseModel):
@@ -51,4 +53,53 @@ class UserLiveTrackingRecordSchema(BaseModel):
     monitor_id: str
     start_time: datetime
     end_time: datetime = None
+
+
+class NewCameraRequestSchema(BaseModel):
+    name: str
+    host: str
+    port: int
+    path: str
+    username: str
+    password: str
+
+
+class NewCameraResponseSchema(BaseModel):
+    monitor_id: str
+
+
+class MonitorSchema(BaseModel):
+    id: str
+    group_id: str
+    type: str
+    ext: str
+    protocol: str
+    host: str
+    path: str
+    port: int
+    fps: int
+    mode: str
+    width: int
+    height: int
+    currently_watching: int
+    status: str
+    code: str
+    sub_stream_active: bool
+    snapshot: str
+    streams: list[str]
+
+
+class MonitorRegisterSchema(BaseModel):
+    location_id: int
+    monitor_id: str
+    organization_id: int
+    organization_slug: str
+
+
+class VideoSchema(BaseModel):
+    monitor_id: str
+    filename: str
+    start: str
+    end: str
+    video_url: str
 
