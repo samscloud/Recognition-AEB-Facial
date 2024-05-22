@@ -95,7 +95,7 @@ def register_new_monitor(payload: MonitorRegisterSchema, _=Depends(get_api_key))
     users = []
     live_tracking = dict()
     face_tracking = dict()
-    if len(processor.monitors) > 0:
+    if processor.monitors and len(processor.monitors) > 0:
         users = processor.monitors[0].users
         live_tracking = processor.monitors[0].live_tracking
         face_tracking = processor.monitors[0].face_tracking
