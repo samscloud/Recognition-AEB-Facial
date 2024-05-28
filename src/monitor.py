@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections import defaultdict
 from typing import List
 
@@ -59,7 +60,7 @@ class Processor:
             while True:
                 success, frame = cap.read()
                 if not success:
-                    print(f"Failed to grab frame from {self.monitors[monitor_id]}")
+                    logging.info(f"Failed to grab frame from {self.monitors[monitor_id]}")
                     await asyncio.sleep(0.1)
                     continue
 
@@ -67,10 +68,10 @@ class Processor:
                     if int(cap.get(cv2.CAP_PROP_POS_FRAMES)) % 30 == 0:
                         boxes, indexes, class_ids = self.object_detection.predict(frame)
                         if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
-                            print(boxes, indexes, class_ids)
+                            logging.info(boxes, indexes, class_ids)
                         # TODO: face detection
                 except Exception as e:
-                    print(f"Failed to predict object detection model: {e}")
+                    logging.info(f"Failed to predict object detection model: {e}")
 
                 if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
                     self.object_detection.draw_boxes(frame, boxes, indexes, class_ids)
@@ -83,7 +84,7 @@ class Processor:
                 else:
                     await asyncio.sleep(1)
         except Exception as e:
-            print(f"Exception occurred while capturing frames from camera {monitor_id}: {e}")
+            logging.info(f"Exception occurred while capturing frames from camera {monitor_id}: {e}")
         finally:
             if cap is not None:
                 cap.release()

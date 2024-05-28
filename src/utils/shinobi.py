@@ -338,7 +338,7 @@ class Shinobi:
                 status=monitor["status"],
                 code=monitor["code"],
                 sub_stream_active=monitor["subStreamActive"],
-                snapshot=monitor["snapshot"],
+                snapshot=None,
                 streams=monitor["streams"],
             )
             for monitor in response.json()

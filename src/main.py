@@ -42,7 +42,7 @@ async def add_new_user(user_id: int):
 @app.on_event("startup")
 async def startup():
     logging.info("start")
-    time.sleep(20)
+    time.sleep(60)
     try:
         logging.info("read monitors data")
         active_monitors = await init_service.execute()
