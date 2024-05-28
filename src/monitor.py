@@ -64,18 +64,18 @@ class Processor:
                     await asyncio.sleep(0.1)
                     continue
 
-                try:
-                    if int(cap.get(cv2.CAP_PROP_POS_FRAMES)) % 30 == 0:
-                        boxes, indexes, class_ids = self.object_detection.predict(frame)
-                        if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
-                            logging.info(boxes, indexes, class_ids)
-                        # TODO: face detection
-                except Exception as e:
-                    logging.info(f"Failed to predict object detection model: {e}")
-
-                if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
-                    self.object_detection.draw_boxes(frame, boxes, indexes, class_ids)
-                await asyncio.sleep(0.03)
+                # try:
+                #     if int(cap.get(cv2.CAP_PROP_POS_FRAMES)) % 30 == 0:
+                #         boxes, indexes, class_ids = self.object_detection.predict(frame)
+                #         if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
+                #             logging.info(boxes, indexes, class_ids)
+                #         # TODO: face detection
+                # except Exception as e:
+                #     logging.info(f"Failed to predict object detection model: {e}")
+                #
+                # if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
+                #     self.object_detection.draw_boxes(frame, boxes, indexes, class_ids)
+                # await asyncio.sleep(0.03)
 
                 if self.ws_connections.get(monitor_id):
                     self.frames[monitor_id] = frame
