@@ -12,8 +12,30 @@ class MonitorStateEnum(str, Enum):
     record = "record"
 
 
+class OrganizationCameraSchema(BaseModel):
+    id: int
+    name: str
+    monitor_id: str
+    user_name: str
+    password: str
+    ip_address: str
+    port: int
+    path: str
+
+    stream_playlist: str = None
+
+
+class MonitorStreamSchema(BaseModel):
+    monitor_id: str
+    stream_url: str
+
+
 class CCTVCamera(BaseModel):
     monitor_id: str
+    username: str
+    password: str
+    ip: str
+    stream: str
     monitor_stream_url: str
     location_id: int
 

@@ -1,90 +1,102 @@
-import asyncio
-import logging
-from collections import defaultdict
-from typing import List
+import os
+import shutil
+import subprocess
+import threading
+from typing import List, Dict, Optional
 
 import cv2
-from starlette.websockets import WebSocket
 
-from src.config import settings
-from src.recorgnition.objects_detections import ObjectDetectionModel
-from src.schema import CCTVCamera
-from src.utils.shinobi import Shinobi
+from src.main_server import MainServer
+from src.schema import OrganizationCameraSchema
 
 
-class Processor:
-    def __init__(self, shinobi: Shinobi, object_detection_model: ObjectDetectionModel):
-        self.shinobi = shinobi
-        self.object_detection = object_detection_model
-        self.s3_bucket_name = settings.AWS_STORAGE_BUCKET_NAME
+class MonitorProcessor:
 
-        self.notification_timeout = settings.USER_NOTIFICATION_DELAY_SECONDS
-
-        self.organization_slug = settings.ORGANIZATION_SLUG
-        self.organization_id = settings.ORGANIZATION_ID
-        self.be_api_key = settings.BACKEND_API_KEY
-        self.be_url = settings.BACKEND_API_URL
-
-        self.tasks = []
-        self.ws_connections = defaultdict(list)
-        self.frames = None
-
+    def __init__(self, main_server: MainServer):
+        self.main_server = main_server
         self.monitors = {}
 
-    def set_monitors(self, monitors: List[CCTVCamera]):
+    def set_monitors(self, monitors: List[OrganizationCameraSchema]):
         self.monitors = {monitor.monitor_id: monitor for monitor in monitors}
-        self.frames = {monitor.monitor_id: None for monitor in monitors}
 
-        for monitor in monitors:
-            self.tasks.append(
-                asyncio.create_task(self.capture_frames(monitor.monitor_id))
-            )
+    def get_monitor(self, monitor_id: str) -> Optional[OrganizationCameraSchema]:
+        return self.monitors.get(monitor_id)
 
-    def register_connection(self, ws_connection: WebSocket, monitor_id: str):
-        self.ws_connections[monitor_id].append(ws_connection)
+    @staticmethod
+    def __add_watermark(frame, watermark_text="samscloud", position=(10, 50)):
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        color = (255, 255, 255)  # White color
+        thickness = 2
+        cv2.putText(frame, watermark_text, position, font, font_scale, color, thickness, cv2.LINE_AA)
+        return frame
 
-    def get_frame(self, monitor_id: str):
-        return self.frames.get(monitor_id)
+    def __generate_hls_stream(self, rtsp_url: str, output_playlist: str, segment_files_pattern: str):
+        cap = cv2.VideoCapture(rtsp_url)
+        if not cap.isOpened():
+            print("Error: Cannot open RTSP stream")
+            return
 
-    async def capture_frames(self, monitor_id: str):
-        cap = None
+        # FFmpeg command to handle HLS streaming
+        ffmpeg_command = [
+            "ffmpeg",
+            "-y",  # Overwrite output files
+            "-f", "rawvideo",  # Input format
+            "-pix_fmt", "bgr24",  # Pixel format
+            "-s", f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}",  # Frame size
+            "-r", str(cap.get(cv2.CAP_PROP_FPS)),  # Frame rate
+            "-i", "-",  # Input from stdin
+            "-c:v", "libx264",  # Video codec
+            "-hls_flags", "delete_segments",
+            "-f", "hls",  # Output format
+            "-hls_time", "10",  # Segment length
+            "-hls_list_size", "0",  # Keep all segments in playlist
+            "-hls_segment_filename", segment_files_pattern,  # Segment file naming pattern
+            output_playlist
+        ]
 
-        boxes, indexes, class_ids = [], [], []
+        # Start FFmpeg process
+        process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
         try:
-            cap = cv2.VideoCapture(self.monitors[monitor_id].monitor_stream_url)
-            if not cap.isOpened():
-                raise Exception(f"Error: Could not open video stream {self.monitors[monitor_id]}")
-
-            # TODO: implement reconnect
             while True:
-                success, frame = cap.read()
-                if not success:
-                    logging.info(f"Failed to grab frame from {self.monitors[monitor_id]}")
-                    await asyncio.sleep(0.1)
-                    continue
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-                # try:
-                #     if int(cap.get(cv2.CAP_PROP_POS_FRAMES)) % 30 == 0:
-                #         boxes, indexes, class_ids = self.object_detection.predict(frame)
-                #         if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
-                #             logging.info(boxes, indexes, class_ids)
-                #         # TODO: face detection
-                # except Exception as e:
-                #     logging.info(f"Failed to predict object detection model: {e}")
-                #
-                # if len(boxes) > 0 and len(indexes) > 0 and len(class_ids) > 0:
-                #     self.object_detection.draw_boxes(frame, boxes, indexes, class_ids)
-                # await asyncio.sleep(0.03)
+                # Apply watermark
+                frame = self.__add_watermark(frame)
 
-                if self.ws_connections.get(monitor_id):
-                    self.frames[monitor_id] = frame
-
-                    await asyncio.sleep(0.03)  # Control frame rate (30 FPS)
-                else:
-                    await asyncio.sleep(1)
+                # Write the frame to FFmpeg's stdin
+                process.stdin.write(frame.tobytes())
         except Exception as e:
-            logging.info(f"Exception occurred while capturing frames from camera {monitor_id}: {e}")
+            print(f"Error: {e}")
         finally:
-            if cap is not None:
-                cap.release()
+            # Release resources
+            cap.release()
+            process.stdin.close()
+            process.wait()
+
+    def run_stream(self, monitor: OrganizationCameraSchema) -> str:
+        output_dir = os.path.join("src/streams", monitor.monitor_id)
+        rtsp_url = f"rtsp://{monitor.user_name}:{monitor.password}@{monitor.ip_address}:{monitor.port}/{monitor.path}"
+        segment_files_pattern = os.path.join(output_dir, "segment_%03d.ts")
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        try:
+            thread = threading.Thread(target=self.__generate_hls_stream, args=(rtsp_url, os.path.join(output_dir, "output.m3u8"), segment_files_pattern))
+            thread.start()
+        except Exception as e:
+            print(f"Error: {e}")
+            shutil.rmtree(output_dir)
+
+        monitor.stream_playlist = f"/streams/{monitor.monitor_id}/output.m3u8"
+
+        return monitor.stream_playlist
+
+    def run_monitors(self):
+        for monitor in self.monitors.values():
+            self.run_stream(monitor)
+

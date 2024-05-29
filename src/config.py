@@ -15,7 +15,7 @@ class Config(BaseSettings):
     ORGANIZATION_ID: int = Field(..., env="ORGANIZATION_ID")
     ORGANIZATION_SLUG: str = Field(..., env="ORGANIZATION_SLUG")
 
-    BACKEND_API_URL: str = Field("https://api.samscloud.io/api/v2", env="BACKEND_API_URL")
+    BACKEND_API_URL: str = Field("https://api.samscloud.io/api/v2/organizations", env="BACKEND_API_URL")
     BACKEND_API_KEY: str = Field(..., env="BACKEND_API_KEY")
 
     # AWS
