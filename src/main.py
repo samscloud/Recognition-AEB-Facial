@@ -15,6 +15,8 @@ from src.intit.face_recognition import FaceRecognitionInit
 from src.config import settings, app_configs
 from src.main_server import MainServer
 from src.monitor import MonitorProcessor
+from src.handler.api.router import router as api_router
+from src.handler.files.router import router as file_router
 from src.recorgnition.face import FaceRecognitionProcessor
 from src.recorgnition.objects_detections import ObjectDetectionModel
 from src.schema import ManageUserTrackingStatusSchema, NewCameraRequestSchema, NewCameraResponseSchema, MonitorSchema, \
@@ -36,7 +38,7 @@ app = FastAPI(**app_configs)
 main_server = MainServer()
 monitor_processor = MonitorProcessor(main_server)
 
-router = APIRouter()
+# router = APIRouter()
 
 
 # async def add_new_user(user_id: int):
@@ -70,30 +72,29 @@ async def startup():
 #     return processor.stop()
 
 
-@router.get("/healthcheck")
-async def health_check(_=Depends(get_api_key)) -> Dict:
-    return {"status": "OK"}
+# @router.get("/healthcheck")
+# async def health_check(_=Depends(get_api_key)) -> Dict:
+#     return {"status": "OK"}
 
 
-@router.get("monitor/{monitor_id}/streams")
-async def get_monitor_stream(monitor_id: str) -> MonitorStreamSchema:
-    monitor = monitor_processor.get_monitor(monitor_id)
-    if not monitor:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="monitor not found")
-
-    return MonitorStreamSchema(
-        monitor_id=monitor.monitor_id,
-        stream_url=monitor.stream_url,
-    )
-
-
-@router.get("monitor/{monitor_id}/streams/playlist")
-async def get_stream_playlist(monitor_id: str):
-    monitor = monitor_processor.get_monitor(monitor_id)
-    if not monitor:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="monitor not found")
-
-    return FileResponse(monitor.stream_playlist)
+# @router.get("monitor/{monitor_id}/streams")
+# async def get_monitor_stream(monitor_id: str) -> MonitorStreamSchema:
+#     monitor = monitor_processor.get_monitor(monitor_id)
+#     if not monitor:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="monitor not found")
+#     return MonitorStreamSchema(
+#         monitor_id=monitor.monitor_id,
+#         stream_url=monitor.stream_playlist,
+#     )
+#
+#
+# @router.get("/monitor/{monitor_id}/streams/{filename}")
+# async def get_stream_playlist(monitor_id: str, filename: str):
+#     monitor = monitor_processor.get_monitor(monitor_id)
+#     if not monitor:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="monitor not found")
+#
+#     return FileResponse(f"src/streams/{monitor.monitor_id}/{filename}")
 
 
 # @router.get("/available-users")
@@ -243,4 +244,26 @@ async def get_stream_playlist(monitor_id: str):
 #         print(e)
 
 
-app.include_router(router, prefix="/api")
+@app.websocket("/ws/{monitor_id}")
+async def websocket_endpoint(websocket: WebSocket, monitor_id: str):
+    print(monitor_id)
+    logging.info(monitor_id)
+    await websocket.accept()
+    print(monitor_id)
+
+    monitor_processor.set_wss_connection(monitor_id, websocket)
+    print(monitor_processor.wss_connections)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(data)
+    except WebSocketDisconnect as e:
+        logging.error(e)
+        # TODO: remove connection
+        # active_connections[camera_index].remove(websocket)
+    except Exception as e:
+        logging.error(e)
+
+
+app.include_router(api_router, prefix="/api", tags=["Monitors API"])
+app.include_router(file_router, prefix="", tags=["Streaming"])

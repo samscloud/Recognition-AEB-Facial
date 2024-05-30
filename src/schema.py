@@ -28,6 +28,7 @@ class OrganizationCameraSchema(BaseModel):
 class MonitorStreamSchema(BaseModel):
     monitor_id: str
     stream_url: str
+    wss_url: str
 
 
 class CCTVCamera(BaseModel):
