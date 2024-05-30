@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import threading
 import random
+from datetime import datetime
 from typing import List, Dict, Optional
 from queue import Queue
 
@@ -46,7 +47,7 @@ class MonitorProcessor:
         return [item for item in self.monitors.values()]
 
     @staticmethod
-    def __add_watermark(frame, watermark_text="samscloud", position=(10, 50)):
+    def __add_watermark(frame, watermark_text=f"samscloud: {datetime.now().isoformat()}", position=(10, 50)):
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1
         color = (255, 255, 255)  # White color
