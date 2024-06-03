@@ -14,6 +14,7 @@ import cv2
 from starlette.websockets import WebSocket
 
 from src.main_server import MainServer
+from src.recorgnition.object_detections import ObjectDetection
 from src.schema import OrganizationCameraSchema
 
 
@@ -26,6 +27,8 @@ class MonitorProcessor:
         self.loop = asyncio.new_event_loop()
         self.message_queues = {}
         threading.Thread(target=self._start_asyncio_loop, daemon=True).start()
+
+        self.object_detection_model = ObjectDetection()
 
     def _start_asyncio_loop(self):
         asyncio.set_event_loop(self.loop)
@@ -47,11 +50,12 @@ class MonitorProcessor:
         return [item for item in self.monitors.values()]
 
     @staticmethod
-    def __add_watermark(frame, watermark_text=f"samscloud: {datetime.now().isoformat()}", position=(10, 50)):
+    def __add_watermark(frame, watermark_text=f"samscloud", position=(10, 50)):
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 1
         color = (255, 255, 255)  # White color
         thickness = 2
+        watermark_text += f": {datetime.now().isoformat()}"
         cv2.putText(frame, watermark_text, position, font, font_scale, color, thickness, cv2.LINE_AA)
         return frame
 
@@ -89,6 +93,9 @@ class MonitorProcessor:
 
                 # Apply watermark
                 frame = self.__add_watermark(frame)
+                frame, findings = self.object_detection_model.process(frame)
+
+
                 if random.randint(0, 90) == 9:
                     msg = json.dumps({
                         "event": "object_detected",
