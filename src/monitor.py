@@ -28,6 +28,8 @@ class MonitorProcessor:
         self.message_queues = {}
         threading.Thread(target=self._start_asyncio_loop, daemon=True).start()
 
+        self.stop_event = threading.Event()
+
         self.object_detection_model = ObjectDetection()
 
     def _start_asyncio_loop(self):
@@ -66,35 +68,54 @@ class MonitorProcessor:
             return
 
         # FFmpeg command to handle HLS streaming
+        # ffmpeg_command = [
+        #     "ffmpeg",
+        #     "-y",  # Overwrite output files
+        #     "-f", "rawvideo",  # Input format
+        #     "-pix_fmt", "bgr24",  # Pixel format
+        #     "-s", f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}",  # Frame size
+        #     "-r", str(cap.get(cv2.CAP_PROP_FPS)),  # Frame rate
+        #     "-i", "-",  # Input from stdin
+        #     "-c:v", "libx264",  # Video codec
+        #     "-f", "hls",  # Output format
+        #     "-hls_time", "10",  # Segment length
+        #     "-hls_list_size", "0",  # Keep all segments in playlist
+        #     "-hls_segment_filename", segment_files_pattern,  # Segment file naming pattern
+        #     output_playlist
+        # ]
+
         ffmpeg_command = [
             "ffmpeg",
             "-y",  # Overwrite output files
             "-f", "rawvideo",  # Input format
             "-pix_fmt", "bgr24",  # Pixel format
             "-s", f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}",  # Frame size
-            "-r", str(cap.get(cv2.CAP_PROP_FPS)),  # Frame rate
+            "-thread_queue_size", "1024",  # Increase thread queue size
             "-i", "-",  # Input from stdin
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",  # Add silent audio track
             "-c:v", "libx264",  # Video codec
+            "-c:a", "aac",  # Audio codec
+            "-b:a", "128k",  # Audio bitrate
+            "-shortest",  # Match video duration to audio
             "-f", "hls",  # Output format
             "-hls_time", "10",  # Segment length
             "-hls_list_size", "0",  # Keep all segments in playlist
             "-hls_segment_filename", segment_files_pattern,  # Segment file naming pattern
-            output_playlist
+            output_playlist  # Output playlist file
         ]
 
         # Start FFmpeg process
         process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
 
         try:
-            while True:
+            while not self.stop_event.is_set():
                 ret, frame = cap.read()
                 if not ret:
                     break
 
                 # Apply watermark
                 frame = self.__add_watermark(frame)
-                frame, findings = self.object_detection_model.process(frame)
-
+                # frame, findings = self.object_detection_model.process(frame)
 
                 if random.randint(0, 90) == 9:
                     msg = json.dumps({

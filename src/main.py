@@ -1,29 +1,32 @@
-import asyncio
 import logging
-import time
-from typing import Dict, List
-
-import cv2
-from fastapi import FastAPI, APIRouter, Depends, BackgroundTasks, HTTPException, Response
-from fastapi.responses import FileResponse
-from starlette import status
-from starlette.responses import HTMLResponse
+from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from src.dependencies import get_api_key
-from src.intit.face_recognition import FaceRecognitionInit
 from src.config import settings, app_configs
 from src.main_server import MainServer
 from src.monitor import MonitorProcessor
-from src.handler.api.router import router as api_router
-from src.handler.files.router import router as file_router
-from src.recorgnition.face import FaceRecognitionProcessor
-from src.recorgnition.objects_detections import ObjectDetectionModel
-from src.schema import ManageUserTrackingStatusSchema, NewCameraRequestSchema, NewCameraResponseSchema, MonitorSchema, \
-    CCTVCamera, MonitorRegisterSchema, VideoSchema, MonitorStreamSchema
-from src.utils.shinobi import Shinobi
+from src.api.monitor.router import router as api_router
+from src.api.files.router import router as file_router
+
+from src.recorgnition.face_detections import FaceRecognition
+
+logger = logging.getLogger("uvicorn")
+
+# from src.recorgnition.face import FaceRecognitionProcessor
+# from src.recorgnition.objects_detections import ObjectDetectionModel
+# from src.schema import ManageUserTrackingStatusSchema, NewCameraRequestSchema, NewCameraResponseSchema, MonitorSchema, \
+#     CCTVCamera, MonitorRegisterSchema, VideoSchema, MonitorStreamSchema
+# from src.utils.shinobi import Shinobi
 
 app = FastAPI(**app_configs)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 # shinobi = Shinobi(settings.SHINOBI_USER, settings.SHINOBI_PASSWORD, settings.SHINOBI_API_KEY)
 # processor = FaceRecognitionProcessor(shinobi=shinobi)
 # detection_model = ObjectDetectionModel()
@@ -38,25 +41,23 @@ app = FastAPI(**app_configs)
 main_server = MainServer()
 monitor_processor = MonitorProcessor(main_server)
 
-# router = APIRouter()
-
-
-# async def add_new_user(user_id: int):
-#     dataset = init_service.read_user_datasets([user_id])
-#     if dataset:
-#         processor.add_new_user(user_id, dataset)
-
 
 @app.on_event("startup")
 async def startup():
-    logging.info("start")
+    logger.info("start")
     try:
-        logging.info("read monitors info")
+        logger.info("read monitors info")
         organization_monitors = await main_server.get_monitors()
-        logging.info(f"organization monitors: {organization_monitors}")
+        tracking_users = await main_server.get_tracking_users()
+        logger.info(f"organization monitors: {organization_monitors}")
+        logger.info(f"tracking_users: {tracking_users}")
 
-        monitor_processor.set_monitors(organization_monitors)
-        monitor_processor.run_monitors()
+        logger.info(f"initialize face recognition service")
+        face_recognition_service = FaceRecognition(tracking_users)
+        print(face_recognition_service.faces_dataset)
+
+        # monitor_processor.set_monitors(organization_monitors)
+        # monitor_processor.run_monitors()
 
         # active_monitors = await init_service.execute()
         # logging.info(f"active monitors: {active_monitors}")
@@ -64,7 +65,7 @@ async def startup():
         # logging.info("start camera")
         # camera_processor.set_monitors(monitors=active_monitors)
     except Exception as e:
-        logging.info(f"Server start failed: {e}")
+        logger.info(f"Server start failed: {e}")
 
 
 # @app.on_event("shutdown")

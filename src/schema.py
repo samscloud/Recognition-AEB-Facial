@@ -25,6 +25,11 @@ class OrganizationCameraSchema(BaseModel):
     stream_playlist: str = None
 
 
+class TrackingUsersSchema(BaseModel):
+    id: int
+    tracking_enabled: bool
+
+
 class MonitorStreamSchema(BaseModel):
     monitor_id: str
     stream_url: str

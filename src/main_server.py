@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 from aiohttp import ClientSession
 
 from src.config import settings
-from src.schema import OrganizationCameraSchema
+from src.schema import OrganizationCameraSchema, TrackingUsersSchema
 
 
 class MainBEException(Exception):
@@ -37,3 +37,12 @@ class MainServer:
             raise MainBEException
 
         return [OrganizationCameraSchema(**obj) for obj in response]
+
+    async def get_tracking_users(self) -> List[TrackingUsersSchema]:
+        url = f"https://api.samscloud.io/api/v2/organizations/{self.organization_slug}/cctv/user-tracking/"
+
+        response = await self.__send_get_request(url)
+        if response is None:
+            raise MainBEException
+
+        return [TrackingUsersSchema(**obj) for obj in response]
