@@ -9,7 +9,7 @@ from src.monitor import MonitorProcessor
 from src.api.monitor.router import router as api_router
 from src.api.files.router import router as file_router
 
-from src.recorgnition.face_detections import FaceRecognition
+# from src.recorgnition.face_detections import FaceRecognition
 
 logger = logging.getLogger("uvicorn")
 
@@ -53,11 +53,11 @@ async def startup():
         logger.info(f"tracking_users: {tracking_users}")
 
         logger.info(f"initialize face recognition service")
-        face_recognition_service = FaceRecognition(tracking_users)
-        print(face_recognition_service.faces_dataset)
+        # face_recognition_service = FaceRecognition(tracking_users)
+        # print(face_recognition_service.faces_dataset)
 
-        # monitor_processor.set_monitors(organization_monitors)
-        # monitor_processor.run_monitors()
+        monitor_processor.set_monitors(organization_monitors)
+        monitor_processor.run_monitors()
 
         # active_monitors = await init_service.execute()
         # logging.info(f"active monitors: {active_monitors}")
