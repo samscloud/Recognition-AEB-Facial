@@ -19,10 +19,10 @@ class ObjectRectangleArea(BaseModel):
 
 
 class ObjectTypeEnum(str, Enum):
-    WEAPON = 'Weapon'
-    FIRE = 'Fire'
-    GUN = 'Gun'
-    RIFLE = 'Rifle'
+    WEAPON = "Weapon"
+    FIRE = "Fire"
+    GUN = "Gun"
+    RIFLE = "Rifle"
 
     @staticmethod
     def from_str(label) -> Optional["ObjectTypeEnum"]:
@@ -64,7 +64,9 @@ class ObjectDetectionModel:
 
         # Resize frame for faster processing
         frame_resized = cv2.resize(frame, (416, 416))
-        blob = cv2.dnn.blobFromImage(frame_resized, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+        blob = cv2.dnn.blobFromImage(
+            frame_resized, 0.00392, (416, 416), (0, 0, 0), True, crop=False
+        )
         self.model.setInput(blob)
         outs = self.model.forward(self.output_layer_names)
 
@@ -99,5 +101,6 @@ class ObjectDetectionModel:
                 label = str(self.classes[class_ids[i]])
                 color = (0, 255, 0)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-                cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
+                cv2.putText(
+                    frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
+                )

@@ -8,6 +8,8 @@ from src.main_server import MainServer
 from src.monitor import MonitorProcessor
 from src.api.monitor.router import router as api_router
 from src.api.files.router import router as file_router
+from src.recorgnition.face_detections import FaceRecognition
+from src.services.shinobi import Shinobi
 
 # from src.recorgnition.face_detections import FaceRecognition
 
@@ -40,6 +42,9 @@ app.add_middleware(
 
 main_server = MainServer()
 monitor_processor = MonitorProcessor(main_server)
+shinobi = Shinobi(
+    settings.SHINOBI_USER, settings.SHINOBI_PASSWORD, settings.SHINOBI_API_KEY
+)
 
 
 @app.on_event("startup")
@@ -52,10 +57,15 @@ async def startup():
         logger.info(f"organization monitors: {organization_monitors}")
         logger.info(f"tracking_users: {tracking_users}")
 
+        logger.info("register shinobi monitors")
+        shinobi.register_monitors(organization_monitors)
+
         logger.info(f"initialize face recognition service")
-        # face_recognition_service = FaceRecognition(tracking_users)
+        face_recognition_service = FaceRecognition(tracking_users)
         # print(face_recognition_service.faces_dataset)
 
+        monitor_processor.set_face_detection_model(face_recognition_service)
+        monitor_processor.set_shinobi_client = shinobi
         monitor_processor.set_monitors(organization_monitors)
         monitor_processor.run_monitors()
 

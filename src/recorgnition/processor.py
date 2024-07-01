@@ -1,13 +1,25 @@
+from typing import Tuple
+
 import cv2
+import numpy as np
 from ultralytics import YOLO
 
+from src.recorgnition.object_detections import ObjectDetection
 
-class ObjectDetection:
+
+class Processor:
     def __init__(self):
         self.yolo_model = YOLO("src/recorgnition/models/weapons.pt")
         self.confidence_level = 0.6
 
-    def process(self, frame):
+    def weapon_processor(self, frame: np.ndarray) -> Tuple[np.ndarray, list[str]]:
+        """
+        Process single frame and try to find a weapon.
+        If weapon is found, notify main backend server
+        :param frame: video frame np.ndarray
+        :return: updated frame np.ndarray
+        """
+
         results = self.yolo_model(frame)
         labels = []
         for result in results:
@@ -36,3 +48,6 @@ class ObjectDetection:
                         cv2.LINE_AA,
                     )
         return frame, labels
+
+    def face_processor(self, frame: np.ndarray):
+        pass

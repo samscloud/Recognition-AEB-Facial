@@ -130,4 +130,3 @@ class VideoSchema(BaseModel):
     start: str
     end: str
     video_url: str
-
