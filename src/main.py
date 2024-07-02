@@ -65,15 +65,9 @@ async def startup():
         # print(face_recognition_service.faces_dataset)
 
         monitor_processor.set_face_detection_model(face_recognition_service)
-        monitor_processor.set_shinobi_client = shinobi
+        monitor_processor.set_shinobi_client(shinobi)
         monitor_processor.set_monitors(organization_monitors)
         monitor_processor.run_monitors()
-
-        # active_monitors = await init_service.execute()
-        # logging.info(f"active monitors: {active_monitors}")
-        #
-        # logging.info("start camera")
-        # camera_processor.set_monitors(monitors=active_monitors)
     except Exception as e:
         logger.info(f"Server start failed: {e}")
 
