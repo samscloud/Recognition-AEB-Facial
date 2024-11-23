@@ -1,0 +1,77 @@
+import cv2
+import face_recognition
+from numpy import ndarray
+from ultralytics import YOLO
+
+yolo_model = YOLO("src/recorgnition/models/weapons.pt", verbose=True)
+confidence_level = 0.6
+
+
+def detect_guns(frame: ndarray) -> tuple[ndarray, list[str], list[tuple]]:
+    results = yolo_model(frame)
+    labels = []
+    gun_boxes: list[tuple] = []
+
+    for result in results:
+        classes = result.names
+        cls = result.boxes.cls
+        conf = result.boxes.conf
+        detections = result.boxes.xyxy
+
+        # face_locations = face_recognition.face_locations(frame)
+        # face_boxes = {(left, top, right, bottom): None for top, right, bottom, left in face_locations}
+        # print(f"Total faces detected: {face_boxes}")
+
+        for pos, detection in enumerate(detections):
+            if conf[pos] >= confidence_level:
+                xmin, ymin, xmax, ymax = detection
+                gun_box = (int(xmin), int(ymin), int(xmax), int(ymax))
+                print(f"Gun box: {gun_box}")
+                gun_boxes.append(gun_box)
+                label = f"{classes[int(cls[pos])]} {conf[pos]:.2f}"
+                labels.append(label)
+                color = (0, int(cls[pos]), 255)
+                cv2.rectangle(frame, (int(xmin), int(ymin)), (int(xmax), int(ymax)), color, 2)
+                cv2.putText(frame, label, (int(xmin), int(ymin) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+                min_distance = None
+                shooter = None
+
+                # for face_box, threshold in face_boxes.items():
+                #     is_near, distance = is_near_boxes(gun_box, face_box)
+                #     print(f"Is near: {is_near}, distance: {distance}")
+                #     if is_near:
+                #         if min_distance is not None:
+                #             if min_distance > distance:
+                #                 min_distance = distance
+                #                 shooter = face_box
+                #         else:
+                #             min_distance = distance
+                #             shooter = face_box
+                # if shooter is not None:
+                #     shooter_face_boxes.append(shooter)
+    # if len(shooter_face_boxes) > 0:
+    #     face_encodings = face_recognition.face_encodings(frame, shooter_face_boxes)
+
+
+    # return frame, labels, face_encodings
+    return frame, labels, gun_boxes
+
+
+def is_near_boxes(box1, box2, threshold=400):
+    """
+    Check if box1 is near box2 within a given threshold.
+    """
+    x1_min, y1_min, x1_max, y1_max = box1
+    x2_min, y2_min, x2_max, y2_max = box2
+
+    # Calculate the center points of both boxes
+    x1_center = (x1_min + x1_max) / 2
+    y1_center = (y1_min + y1_max) / 2
+    x2_center = (x2_min + x2_max) / 2
+    y2_center = (y2_min + y2_max) / 2
+
+    # Calculate the Euclidean distance between the centers
+    distance = ((x2_center - x1_center) ** 2 + (y2_center - y1_center) ** 2) ** 0.5
+
+    return distance < threshold, distance

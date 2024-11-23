@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+    shinobi:
+        image: registry.gitlab.com/shinobi-systems/shinobi:dev
+        container_name: Shinobi_local
+        environment:
+           - PLUGIN_KEYS={}
+           - SSL_ENABLED=false
+        volumes:
+           - /Users/admin/Shinobi/config:/config
+           - /Users/admin/Shinobi/customAutoLoad:/home/Shinobi/libs/customAutoLoad
+           - /Users/admin/Shinobi/database:/var/lib/mysql
+           - /Users/admin/Shinobi/videos:/home/Shinobi/videos
+           - /Users/admin/Shinobi/plugins:/home/Shinobi/plugins
+           - /dev/shm/Shinobi/streams:/dev/shm/streams
+        ports:
+           - 8080:8080
+        restart: unless-stopped
+        networks:
+          - shinobi-net
+
+networks:
+  shinobi-net:
+    driver: bridge
+

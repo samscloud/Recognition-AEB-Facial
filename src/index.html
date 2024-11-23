@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Video Stream</title>
+</head>
+<body>
+    <h1>WebSocket Video Stream</h1>
+    <div>
+        <img id="video1" width="640" height="480" />
+        <!-- Add more <img> tags for additional cameras -->
+    </div>
+    <script>
+        const videoElements = [
+            document.getElementById('video1'),
+        ];
+        const urls = [
+            'ws://127.0.0.1:9000/ws/1LehkY6irg',
+            // Add more URLs for additional cameras
+        ];
+        urls.forEach((url, index) => {
+            const ws = new WebSocket(url);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = function() {
+                console.log('WebSocket connected:', url);
+            };
+            ws.onclose = function() {
+                console.log('WebSocket disconnected:', url);
+            };
+            ws.onmessage = function(event) {
+                const blob = new Blob([event.data], { type: 'image/jpeg' });
+                const imageUrl = URL.createObjectURL(blob);
+                videoElements[index].src = imageUrl;
+
+                // Clean up the object URL to avoid memory leaks
+                videoElements[index].onload = () => {
+                    URL.revokeObjectURL(imageUrl);
+                };
+            };
+        });
+    </script>
+</body>
+</html>

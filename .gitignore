@@ -1,0 +1,8 @@
+.venv
+.idea
+.env
+
+src/recorgnition/yolov3_testing.cfg
+src/recorgnition/yolov3_training_2000.weights
+
+src/streams/*
