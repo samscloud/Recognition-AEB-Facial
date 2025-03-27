@@ -159,7 +159,7 @@ aioboto3==12.3.0
 This project is licensed under .
 
 ## Contact
-For questions or support, please contact us at info@smascloud.io.
+For questions or support, please contact us at info@samscloud.io.
 ```
 
 ### Areas to Complete
